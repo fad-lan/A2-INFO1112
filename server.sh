@@ -12,7 +12,10 @@ echo "The server is running at $ipAddr, port=$port"
 while true
 do
     # Listen for one connection, capture what the client sends
-    request=$(nc -l 1234)
+    request=$(nc -l -v 1234 2>/tmp/ncinfo)
+    clientIP=$(grep "Connection received" /tmp/ncinfo | awk '{print $4}')
+    echo "message was: $request"
+    echo "client IP was: $clientIP"
 
-    echo "DEBUG got request: $request"
 done
+
