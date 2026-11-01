@@ -17,6 +17,17 @@ do
 
     if [ "$request" = "assignment" ]; then
         echo "DEBUG: assignment request"
+        html=$(curl -s "https://www.sydney.edu.au/units/INFO1112/2026-S2C-ND-CC")
+        section=$(echo "$html" | grep -A 20 'Assignment 2')
+        title=$(echo "$section" | grep -o 'Assignment 2' | head -n 1)
+        points=$(echo "$section" | grep -o '[0-9]*%' | head -n 1 | tr -d '%')
+        dueDate=$(echo "$section" | grep -o 'Due date</b>: [^<]*' | head -n 1 | sed 's/Due date<\/b>: //' | sed 's/ at//')
+        topicFull=$(echo "$section" | grep -o 'Programming task - [^<]*' | head -n 1)
+        topic=$(echo "$topicFull" | awk '{print $4}')
+        echo "$topic"
+        echo "$title"
+        echo "$points"
+        echo "$dueDate"
     elif [ "$request" = "population" ]; then
         echo "DEBUG: population request"
     else
