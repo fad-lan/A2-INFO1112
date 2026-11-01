@@ -24,6 +24,14 @@ do
         dueDate=$(echo "$section" | grep -o 'Due date</b>: [^<]*' | head -n 1 | sed 's/Due date<\/b>: //' | sed 's/ at//')
         topicFull=$(echo "$section" | grep -o 'Programming task - [^<]*' | head -n 1)
         topic=$(echo "$topicFull" | awk '{print $4}')
+    cat > assignment.json <<EOF
+{
+  "title" : "$title",
+  "topic" : "$topic",
+  "due_date" : "$dueDate",
+  "points" : $points
+}
+EOF
         echo "$topic"
         echo "$title"
         echo "$points"
