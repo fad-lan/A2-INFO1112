@@ -14,7 +14,14 @@ do
     # Listen for one connection, capture what the client sends
     request=$(nc -l -v 1234 2>/tmp/ncinfo)
     clientIP=$(grep "Connection received" /tmp/ncinfo | awk '{print $4}')
-    echo "message was: $request"
+
+    if [ "$request" = "assignment" ]; then
+        echo "DEBUG: assignment request"
+    elif [ "$request" = "population" ]; then
+        echo "DEBUG: population request"
+    else
+        echo "DEBUG: POI or unknown"
+    fi
     echo "client IP was: $clientIP"
 
 done
