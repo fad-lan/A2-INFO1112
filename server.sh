@@ -45,6 +45,8 @@ if [ "$1" = "handle" ]; then
                 echo "$year,$pop" >> /tmp/popdata.csv
             fi
         done
+        
+        python3 /root/plot.py
 
     else
         echo "DEBUG: POI or unknown"
