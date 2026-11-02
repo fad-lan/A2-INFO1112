@@ -5,23 +5,22 @@
 # Whatever this branch prints to stdout goes straight back to the client.
 if [ "$1" = "handle" ]; then
     clientIP="$NCAT_REMOTE_ADDR"
-    lockfile="/tmp/lock_$clientIP"
-
-    # if this IP is already being served, reject
-    if [ -e "$lockfile" ]; then
+    lockdir="/tmp/lock_$clientIP"
+ 
+    # Atomic lock: mkdir succeeds for only ONE process at a time.
+    # If it fails, this IP is already being served -> reject (no race condition).
+    if ! mkdir "$lockdir" 2>/dev/null; then
         echo "Request rejected: already serving your previous request"
         exit 0
     fi
-
-    # create the lock
-    touch "$lockfile"
-    trap 'rm -f "$lockfile"' EXIT
+    trap 'rmdir "$lockdir"' EXIT
+ 
 
     read request
-    echo "client IP: $NCAT_REMOTE_ADDR" >&2
     if [ "$request" = "assignment" ]; then
         html=$(curl -sf "https://www.sydney.edu.au/units/INFO1112/2026-S2C-ND-CC")
         status=$?
+        echo "$html" | html2text | grep -A 2 'Assignment 2' >&2
         if [ "$status" -ne 0 ]; then
             echo "Webpage Error"
             exit 1
@@ -43,6 +42,11 @@ if [ "$1" = "handle" ]; then
             --arg due "$dueDate" \
             --argjson points "$points" \
             '{title: $title, topic: $topic, due_date: $due, points: $points}' > assignment.json
+        
+        if [ ! -s assignment.json ]; then
+            echo "JSON creation failed"
+            exit 1
+        fi
 
         cat assignment.json
 
@@ -50,29 +54,32 @@ if [ "$1" = "handle" ]; then
         csv=$(curl -sf "https://dbr.abs.gov.au/processedData/csv/STE_1.csv")
         status=$?
         if [ "$status" -ne 0 ]; then echo "CSV Error"; exit 1; fi
+        if [ -z "$csv" ]; then echo "CSV Empty"; exit 1; fi
         csv=$(echo "$csv" | tr -d '\r')
-        header=$(echo "$csv" | head -n 1)
-        numCols=$(echo "$header" | awk -F, '{print NF}')
 
         header=$(echo "$csv" | head -n 1)
         dataRow=$(echo "$csv" | grep '^ERP_P_20,')
+        numCols=$(echo "$header" | awk -F, '{print NF}')
+
+
+        pop2025=$(echo "$dataRow" | awk -F, '{print $NF}')
+        if [ -z "$pop2025" ]; then echo "Population data not found"; exit 1; fi
 
         > /tmp/popdata.csv
-
         for i in $(seq 4 "$numCols"); do
             year=$(echo "$header" | awk -F, -v c="$i" '{print $c}')
             pop=$(echo "$dataRow" | awk -F, -v c="$i" '{print $c}')
-
             if [ -n "$pop" ]; then
                 echo "$year,$pop" >> /tmp/popdata.csv
             fi
         done
 
         python3 /root/plot.py
-        cat /root/population.png        
-
+        if [ ! -s /root/population.png ]; then echo "Plot failed"; exit 1; fi
+        cat /root/population.png    
+        echo " "
+        echo "Latest (2025) NSW population: $pop2025"
     else
-        # Decide: is the request coordinates, or a POI name?
         if [[ "$request" =~ ^-?[0-9.]+,-?[0-9.]+$ ]]; then
             # --- coordinate input: split into x and y directly ---
             x=$(echo "$request" | cut -d, -f1)
@@ -115,7 +122,8 @@ if [ "$1" = "handle" ]; then
                 echo "POI API Error"
                 exit 1
             fi
-            echo "$neighbours" | jq '[.features[].attributes.poiname | select(. != null)]'
+            echo "$neighbours" | jq '[.features[].attributes.poiname | select(. != null)]' > /root/poi.json
+            cat /root/poi.json
         fi
     fi
     rm -f "$lockfile"
@@ -126,7 +134,7 @@ ipAddr=$(ifconfig eth0 | grep 'inet addr:' | cut -d: -f2 | awk '{print $1}')
 SCRIPT_PATH=$(readlink -f "$0")
 
 # Start ncat listening in the background (allowed per Ed #622 to use 1234 here)
-ncat -lk -p 1234 --sh-exec "bash $SCRIPT_PATH handle" &
+ncat -lkv -p 1234 --sh-exec "bash $SCRIPT_PATH handle" &
 
 # Give ncat a moment to start listening, then read the port back from ss -ltn
 sleep 1
