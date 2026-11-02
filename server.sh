@@ -47,15 +47,36 @@ if [ "$1" = "handle" ]; then
         python3 /root/plot.py
         cat /root/population.png        
 
-    else
-        response=$(curl -s -G \
+       else
+        # Step 1: look up the POI by name to get its coordinates
+        lookup=$(curl -s -G \
           --data-urlencode "where=poiname='$request'" \
           --data-urlencode "outFields=*" \
           --data-urlencode "returnGeometry=true" \
           --data-urlencode "f=json" \
           "https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_POI/MapServer/0/query")
 
-        echo "$response" | jq '.features'
+        x=$(echo "$lookup" | jq -r '.features[0].geometry.x')
+        y=$(echo "$lookup" | jq -r '.features[0].geometry.y')
+
+        if [ "$x" = "null" ] || [ -z "$x" ]; then
+            echo "[]"
+        else
+            # Step 2: find all POIs within 5 km of those coordinates
+            neighbours=$(curl -s -G \
+              --data-urlencode "geometry=$x,$y" \
+              --data-urlencode "geometryType=esriGeometryPoint" \
+              --data-urlencode "inSR=4283" \
+              --data-urlencode "distance=5000" \
+              --data-urlencode "units=esriSRUnit_Meter" \
+              --data-urlencode "spatialRel=esriSpatialRelIntersects" \
+              --data-urlencode "outFields=poiname" \
+              --data-urlencode "returnGeometry=false" \
+              --data-urlencode "f=json" \
+              "https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_POI/MapServer/0/query")
+
+            echo "$neighbours" | jq '[.features[].attributes.poiname | select(. != null)]'
+        fi
     fi
 
     exit 0
