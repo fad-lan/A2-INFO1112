@@ -15,7 +15,6 @@ if [ "$1" = "handle" ]; then
 
     # create the lock
     touch "$lockfile"
-    sleep 5
     trap 'rm -f "$lockfile"' EXIT
 
     read request
