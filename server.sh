@@ -28,8 +28,6 @@ if [ "$1" = "handle" ]; then
         csv=$(curl -s "https://dbr.abs.gov.au/processedData/csv/STE_1.csv" | tr -d '\r')
         header=$(echo "$csv" | head -n 1)
         numCols=$(echo "$header" | awk -F, '{print NF}')
-        echo "numCols is: [$numCols]"
-        echo "DEBUG numCols=[$numCols]" >&2
 
         header=$(echo "$csv" | head -n 1)
         dataRow=$(echo "$csv" | grep '^ERP_P_20,')
@@ -45,8 +43,9 @@ if [ "$1" = "handle" ]; then
                 echo "$year,$pop" >> /tmp/popdata.csv
             fi
         done
-        
+
         python3 /root/plot.py
+        cat /root/population.png        
 
     else
         echo "DEBUG: POI or unknown"
