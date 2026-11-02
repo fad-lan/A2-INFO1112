@@ -4,10 +4,33 @@
 # When ncat accepts a connection, it runs this script with "handle" as $1.
 # Whatever this branch prints to stdout goes straight back to the client.
 if [ "$1" = "handle" ]; then
+    clientIP="$NCAT_REMOTE_ADDR"
+    lockfile="/tmp/lock_$clientIP"
+
+    # if this IP is already being served, reject
+    if [ -e "$lockfile" ]; then
+        echo "Request rejected: already serving your previous request"
+        exit 0
+    fi
+
+    # create the lock
+    touch "$lockfile"
+    sleep 5
+    trap 'rm -f "$lockfile"' EXIT
+
     read request
     echo "client IP: $NCAT_REMOTE_ADDR" >&2
     if [ "$request" = "assignment" ]; then
-        html=$(curl -s "https://www.sydney.edu.au/units/INFO1112/2026-S2C-ND-CC")
+        html=$(curl -sf "https://www.sydney.edu.au/units/INFO1112/2026-S2C-ND-CC")
+        status=$?
+        if [ "$status" -ne 0 ]; then
+            echo "Webpage Error"
+            exit 1
+        fi
+        if [ -z "$html" ]; then
+            echo "Webpage Empty"
+            exit 1
+        fi
         section=$(echo "$html" | grep -A 20 'Assignment 2')
         title=$(echo "$section" | grep -o 'Assignment 2' | head -n 1)
         points=$(echo "$section" | grep -o '[0-9]*%' | head -n 1 | tr -d '%')
@@ -25,7 +48,10 @@ if [ "$1" = "handle" ]; then
         cat assignment.json
 
     elif [ "$request" = "population" ]; then
-        csv=$(curl -s "https://dbr.abs.gov.au/processedData/csv/STE_1.csv" | tr -d '\r')
+        csv=$(curl -sf "https://dbr.abs.gov.au/processedData/csv/STE_1.csv")
+        status=$?
+        if [ "$status" -ne 0 ]; then echo "CSV Error"; exit 1; fi
+        csv=$(echo "$csv" | tr -d '\r')
         header=$(echo "$csv" | head -n 1)
         numCols=$(echo "$header" | awk -F, '{print NF}')
 
@@ -34,7 +60,6 @@ if [ "$1" = "handle" ]; then
 
         > /tmp/popdata.csv
 
-        numCol=$(echo "$header" | awk -F, '{print NF}')
         for i in $(seq 4 "$numCols"); do
             year=$(echo "$header" | awk -F, -v c="$i" '{print $c}')
             pop=$(echo "$dataRow" | awk -F, -v c="$i" '{print $c}')
@@ -55,22 +80,27 @@ if [ "$1" = "handle" ]; then
             y=$(echo "$request" | cut -d, -f2)
         else
             # --- name input: look it up to get coordinates ---
-            lookup=$(curl -s -G \
+            lookup=$(curl -sf -G \
               --data-urlencode "where=poiname='$request'" \
               --data-urlencode "outFields=*" \
               --data-urlencode "returnGeometry=true" \
               --data-urlencode "f=json" \
               "https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_POI/MapServer/0/query")
+            status=$?
+            if [ "$status" -ne 0 ]; then
+                echo "POI API Error"
+                exit 1
+            fi
             x=$(echo "$lookup" | jq -r '.features[0].geometry.x')
             y=$(echo "$lookup" | jq -r '.features[0].geometry.y')
         fi
 
         # --- guard: no valid coordinates found ---
         if [ "$x" = "null" ] || [ -z "$x" ]; then
-            echo "[]"
+            echo "API Returned Null"
         else
             # --- find all POIs within 5 km ---
-            neighbours=$(curl -s -G \
+            neighbours=$(curl -sf -G \
               --data-urlencode "geometry=$x,$y" \
               --data-urlencode "geometryType=esriGeometryPoint" \
               --data-urlencode "inSR=4283" \
@@ -81,17 +111,18 @@ if [ "$1" = "handle" ]; then
               --data-urlencode "returnGeometry=false" \
               --data-urlencode "f=json" \
               "https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_POI/MapServer/0/query")
+            status=$?
+            if [ "$status" -ne 0 ]; then
+                echo "POI API Error"
+                exit 1
+            fi
             echo "$neighbours" | jq '[.features[].attributes.poiname | select(. != null)]'
         fi
     fi
-
+    rm -f "$lockfile"
     exit 0
 fi
 
-# ---- STARTUP MODE ----
-# Normal run: find IP + port, then launch ncat which re-invokes this script
-# in handle mode for each connection.
-# ---- STARTUP MODE ----
 ipAddr=$(ifconfig eth0 | grep 'inet addr:' | cut -d: -f2 | awk '{print $1}')
 SCRIPT_PATH=$(readlink -f "$0")
 
