@@ -5,7 +5,7 @@
 # Whatever this branch prints to stdout goes straight back to the client.
 if [ "$1" = "handle" ]; then
     read request
-
+    echo "client IP: $NCAT_REMOTE_ADDR" >&2
     if [ "$request" = "assignment" ]; then
         html=$(curl -s "https://www.sydney.edu.au/units/INFO1112/2026-S2C-ND-CC")
         section=$(echo "$html" | grep -A 20 'Assignment 2')
@@ -57,10 +57,18 @@ fi
 # ---- STARTUP MODE ----
 # Normal run: find IP + port, then launch ncat which re-invokes this script
 # in handle mode for each connection.
+# ---- STARTUP MODE ----
 ipAddr=$(ifconfig eth0 | grep 'inet addr:' | cut -d: -f2 | awk '{print $1}')
-PORT_NUM=1234
 SCRIPT_PATH=$(readlink -f "$0")
 
-echo "The server is running at $ipAddr, port=$PORT_NUM"
+# Start ncat listening in the background (allowed per Ed #622 to use 1234 here)
+ncat -lk -p 1234 --sh-exec "bash $SCRIPT_PATH handle" &
 
-ncat -lk -p "$PORT_NUM" --sh-exec "bash $SCRIPT_PATH handle"
+# Give ncat a moment to start listening, then read the port back from ss -ltn
+sleep 1
+port=$(ss -ltn | grep LISTEN | awk '{print $4}' | sed 's/.*://' | head -n 1)
+
+echo "The server is running at $ipAddr, port=$port"
+
+# Keep the script alive so the background ncat keeps serving
+wait
