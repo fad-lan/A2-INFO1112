@@ -47,22 +47,29 @@ if [ "$1" = "handle" ]; then
         python3 /root/plot.py
         cat /root/population.png        
 
-       else
-        # Step 1: look up the POI by name to get its coordinates
-        lookup=$(curl -s -G \
-          --data-urlencode "where=poiname='$request'" \
-          --data-urlencode "outFields=*" \
-          --data-urlencode "returnGeometry=true" \
-          --data-urlencode "f=json" \
-          "https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_POI/MapServer/0/query")
+    else
+        # Decide: is the request coordinates, or a POI name?
+        if [[ "$request" =~ ^-?[0-9.]+,-?[0-9.]+$ ]]; then
+            # --- coordinate input: split into x and y directly ---
+            x=$(echo "$request" | cut -d, -f1)
+            y=$(echo "$request" | cut -d, -f2)
+        else
+            # --- name input: look it up to get coordinates ---
+            lookup=$(curl -s -G \
+              --data-urlencode "where=poiname='$request'" \
+              --data-urlencode "outFields=*" \
+              --data-urlencode "returnGeometry=true" \
+              --data-urlencode "f=json" \
+              "https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_POI/MapServer/0/query")
+            x=$(echo "$lookup" | jq -r '.features[0].geometry.x')
+            y=$(echo "$lookup" | jq -r '.features[0].geometry.y')
+        fi
 
-        x=$(echo "$lookup" | jq -r '.features[0].geometry.x')
-        y=$(echo "$lookup" | jq -r '.features[0].geometry.y')
-
+        # --- guard: no valid coordinates found ---
         if [ "$x" = "null" ] || [ -z "$x" ]; then
             echo "[]"
         else
-            # Step 2: find all POIs within 5 km of those coordinates
+            # --- find all POIs within 5 km ---
             neighbours=$(curl -s -G \
               --data-urlencode "geometry=$x,$y" \
               --data-urlencode "geometryType=esriGeometryPoint" \
@@ -74,7 +81,6 @@ if [ "$1" = "handle" ]; then
               --data-urlencode "returnGeometry=false" \
               --data-urlencode "f=json" \
               "https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_POI/MapServer/0/query")
-
             echo "$neighbours" | jq '[.features[].attributes.poiname | select(. != null)]'
         fi
     fi
