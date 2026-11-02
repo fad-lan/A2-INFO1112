@@ -48,7 +48,14 @@ if [ "$1" = "handle" ]; then
         cat /root/population.png        
 
     else
-        echo "DEBUG: POI or unknown"
+        response=$(curl -s -G \
+          --data-urlencode "where=poiname='$request'" \
+          --data-urlencode "outFields=*" \
+          --data-urlencode "returnGeometry=true" \
+          --data-urlencode "f=json" \
+          "https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_POI/MapServer/0/query")
+
+        echo "$response" | jq '.features'
     fi
 
     exit 0
